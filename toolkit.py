@@ -41,6 +41,9 @@ class Toolkit(tk.Tk):
         self.geometry("1020x820")
         self.minsize(900, 660)
         theme.apply_theme(self)
+        self._icons = {}
+        self._load_icons()
+        self._set_window_icon()
 
         self._build_menu()
         self._build_header()
@@ -55,6 +58,31 @@ class Toolkit(tk.Tk):
         self._build_status()
         self.bind("<Control-q>", lambda e: self.destroy())
         self.bind("<F1>", lambda e: self.show_about())
+
+    # ---- icons -----------------------------------------------------------
+    def _load_icons(self):
+        for key, name in (("48", "icon_48.png"), ("64", "icon_64.png"),
+                          ("256", "icon.png")):
+            path = os.path.join(BASE_DIR, name)
+            if os.path.exists(path):
+                try:
+                    self._icons[key] = tk.PhotoImage(file=path)
+                except Exception:  # noqa: BLE001
+                    pass
+
+    def _set_window_icon(self):
+        ico = os.path.join(BASE_DIR, "icon.ico")
+        if sys.platform.startswith("win") and os.path.exists(ico):
+            try:
+                self.iconbitmap(ico)
+            except Exception:  # noqa: BLE001
+                pass
+        img = self._icons.get("256") or self._icons.get("64")
+        if img is not None:
+            try:
+                self.iconphoto(True, img)
+            except Exception:  # noqa: BLE001
+                pass
 
     # ---- chrome ----------------------------------------------------------
     def _build_menu(self):
@@ -78,8 +106,13 @@ class Toolkit(tk.Tk):
     def _build_header(self):
         header = ttk.Frame(self, style="Header.TFrame", padding=(16, 12))
         header.pack(fill="x")
-        ttk.Label(header, text="\U0001F5A7", style="HeaderBadge.TLabel").pack(
-            side="left", padx=(0, 12))
+        badge = self._icons.get("48")
+        if badge is not None:
+            ttk.Label(header, image=badge, style="HeaderBadge.TLabel").pack(
+                side="left", padx=(0, 14))
+        else:
+            ttk.Label(header, text="\U0001F5A7",
+                      style="HeaderBadge.TLabel").pack(side="left", padx=(0, 12))
         box = ttk.Frame(header, style="Header.TFrame")
         box.pack(side="left")
         ttk.Label(box, text=about.APP_NAME, style="HeaderTitle.TLabel").pack(
@@ -135,17 +168,25 @@ class AboutDialog(tk.Toplevel):
         self.resizable(False, False)
         self.configure(bg=theme.SURFACE)
 
-        wrap = ttk.Frame(self, padding=20)
+        wrap = ttk.Frame(self, padding=20, style="Card.TFrame")
         wrap.pack(fill="both", expand=True)
-        wrap.configure(style="Card.TFrame")
 
-        ttk.Label(wrap, text=f"\U0001F5A7  {about.APP_NAME}",
-                  font=("Segoe UI Semibold", 16),
+        top = ttk.Frame(wrap, style="Card.TFrame")
+        top.pack(anchor="w", fill="x")
+        logo = getattr(parent, "_icons", {}).get("64")
+        if logo is not None:
+            ttk.Label(top, image=logo, style="Card.TLabel").pack(
+                side="left", padx=(0, 14))
+        titlebox = ttk.Frame(top, style="Card.TFrame")
+        titlebox.pack(side="left", anchor="w")
+        ttk.Label(titlebox, text=about.APP_NAME,
+                  font=("Segoe UI Semibold", 18),
                   foreground=theme.ACCENT, background=theme.SURFACE).pack(
             anchor="w")
-        ttk.Label(wrap, text=f"Version {about.VERSION}",
+        ttk.Label(titlebox, text=f"Version {about.VERSION}",
                   foreground=theme.MUTED, background=theme.SURFACE).pack(
-            anchor="w", pady=(0, 10))
+            anchor="w")
+        ttk.Label(wrap, text="", background=theme.SURFACE).pack(pady=2)
         ttk.Label(wrap, text=about.DESCRIPTION, justify="left", wraplength=420,
                   background=theme.SURFACE).pack(anchor="w")
         ttk.Separator(wrap).pack(fill="x", pady=12)

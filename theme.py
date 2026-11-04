@@ -120,6 +120,7 @@ def apply_theme(root: tk.Misc) -> ttk.Style:
                     padding=6)
     style.configure("Status.TFrame", background=STATUS_BG)
     style.configure("Card.TFrame", background=SURFACE)
+    style.configure("Card.TLabel", background=SURFACE, foreground=TEXT)
 
     style.configure("TPanedwindow", background=BG)
     style.configure("TSeparator", background=BORDER)
