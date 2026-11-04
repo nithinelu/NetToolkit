@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# NetToolkit runtime output (generated, not source)
+backups/
+logs/
+output/
+
+# Build / packaging
+build/
+dist/
+*.spec
+
+# OS / editor
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

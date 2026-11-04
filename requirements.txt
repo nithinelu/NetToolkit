@@ -1,0 +1,9 @@
+# CiscoToolkit dependencies
+#
+# The Backup tab needs these (Netmiko pulls in paramiko/cryptography/etc.):
+netmiko>=4.3.0
+openpyxl>=3.1.0
+#
+# The Config Builder and Converter tabs use only the Python standard library.
+# Tkinter (the GUI) ships with the standard python.org Windows installer.
+# Requires Python 3.9 or newer.
