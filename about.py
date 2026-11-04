@@ -6,7 +6,8 @@ VERSION = "1.0.0"
 AUTHOR = "Nithin Eluvathingal"
 YEAR = "2026"
 LICENSE = "MIT License"
-TAGLINE = "Backup  •  Config Builder  •  Multi-vendor Converter"
+TAGLINE = ("Backup  •  Config Builder  •  Converter  •  "
+           "FortiGate")
 COPYRIGHT = f"© {YEAR} {AUTHOR}"
 
 DESCRIPTION = (
@@ -16,7 +17,9 @@ DESCRIPTION = (
     "•  Config Builder — generate copy-paste-ready switch/router "
     "configurations.\n"
     "•  Converter — translate switch configs between Cisco, Arista, "
-    "Aruba, Huawei and HPE Comware."
+    "Aruba, Huawei and HPE Comware.\n"
+    "•  FortiGate — build FortiOS firewall configs, Day 0 (system "
+    "bring-up) through Day 100 (operations & hardening)."
 )
 
 LICENSE_BLURB = (

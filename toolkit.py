@@ -30,6 +30,7 @@ import theme
 from backup_panel import BackupPanel
 from config_panel import ConfigPanel
 from convert_panel import ConvertPanel
+from forti_panel import FortiPanel
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -54,6 +55,7 @@ class Toolkit(tk.Tk):
         nb.add(BackupPanel(nb), text="Backup")
         nb.add(ConfigPanel(nb), text="Config Builder")
         nb.add(ConvertPanel(nb), text="Converter")
+        nb.add(FortiPanel(nb), text="FortiGate")
 
         self._build_status()
         self.bind("<Control-q>", lambda e: self.destroy())

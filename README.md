@@ -13,6 +13,11 @@ tabs in one window:
    HSRP/VRRP, DHCP, ACLs, SNMP, and more). Save/load answers as JSON "specs".
 3. **Converter** — translate a switch configuration **between vendors**:
    **Cisco IOS, Arista EOS, Aruba AOS-CX, Huawei VRP, HPE Comware** — any to any.
+4. **FortiGate** — build **FortiOS firewall** configurations from **Day 0 to
+   Day 100**: system bring-up (hostname, admins + hardening, DNS/NTP,
+   interfaces, routing, DHCP), deployment (address objects, IP pools, VIPs,
+   firewall policies with NAT + AV/Web/IPS/App + SSL inspection), and
+   operations (syslog, FortiAnalyzer, SNMP, HA, auto-updates).
 
 ## Run it
 
@@ -69,7 +74,15 @@ security policies, etc.). Keep credentials and backup files somewhere safe.
 | `cisco_backup.py` | Backup engine + CLI |
 | `config_builder.py` | Config generation engine + CLI/wizard |
 | `vendor_convert.py` | Multi-vendor converter engine + CLI |
-| `backup_panel.py` / `config_panel.py` / `convert_panel.py` | Tab UIs |
+| `forti_builder.py` | FortiGate (FortiOS) config engine + CLI |
+| `backup_panel.py` / `config_panel.py` / `convert_panel.py` / `forti_panel.py` | Tab UIs |
+
+### FortiGate notes
+The FortiGate tab generates **FortiOS 7.x CLI** grouped as Day 0 / Day 1 /
+Day 2+. It applies the built-in `default` AV/Web/IPS/App profiles and
+`certificate-inspection`/`deep-inspection` SSL profiles; a few fields vary by
+model/version, so review before pasting. Based on Fortinet's admin/CLI and
+hardening guides.
 
 ## License
 Released under the **MIT License** — © 2026 Nithin Eluvathingal.
