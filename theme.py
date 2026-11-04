@@ -118,6 +118,8 @@ def apply_theme(root: tk.Misc) -> ttk.Style:
                     font=("Segoe UI", 22))
     style.configure("Status.TLabel", background=STATUS_BG, foreground=MUTED,
                     padding=6)
+    style.configure("Status.TFrame", background=STATUS_BG)
+    style.configure("Card.TFrame", background=SURFACE)
 
     style.configure("TPanedwindow", background=BG)
     style.configure("TSeparator", background=BORDER)

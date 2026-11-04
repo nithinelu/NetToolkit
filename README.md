@@ -1,5 +1,7 @@
 # NetToolkit
 
+*by Nithin Eluvathingal — MIT Licensed*
+
 A single Windows application that combines three network-engineering tools as
 tabs in one window:
 
@@ -61,8 +63,15 @@ security policies, etc.). Keep credentials and backup files somewhere safe.
 ## Files
 | File | Role |
 |------|------|
-| `toolkit.py` | Main window (the three tabs) |
+| `toolkit.py` | Main window (the three tabs, menu, About) |
+| `about.py` | App name / version / author / license metadata |
+| `theme.py` | Shared visual theme |
 | `cisco_backup.py` | Backup engine + CLI |
 | `config_builder.py` | Config generation engine + CLI/wizard |
 | `vendor_convert.py` | Multi-vendor converter engine + CLI |
 | `backup_panel.py` / `config_panel.py` / `convert_panel.py` | Tab UIs |
+
+## License
+Released under the **MIT License** — © 2026 Nithin Eluvathingal.
+See the [LICENSE](LICENSE) file for the full text. The author and license are
+also shown in the app's title bar, status bar, and **Help → About** dialog.
