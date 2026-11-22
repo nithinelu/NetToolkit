@@ -36,6 +36,33 @@ from upgrade_panel import UpgradePanel
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+class ScrollTab(ttk.Frame):
+    """Wrap a dense panel in a vertically scrollable area so nothing (like the
+    log console) gets squeezed to zero height on smaller windows."""
+
+    def __init__(self, parent, panel_cls):
+        super().__init__(parent)
+        canvas = tk.Canvas(self, highlightthickness=0, background=theme.BG)
+        vbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vbar.set)
+        vbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        inner = ttk.Frame(canvas)
+        win = canvas.create_window((0, 0), window=inner, anchor="nw")
+        self.panel = panel_cls(inner)
+        self.panel.pack(fill="both", expand=True)
+
+        inner.bind("<Configure>",
+                   lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>",
+                    lambda e: canvas.itemconfigure(win, width=e.width))
+
+        def _wheel(e):
+            canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _wheel))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+
 class Toolkit(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -56,8 +83,8 @@ class Toolkit(tk.Tk):
         nb.add(BackupPanel(nb), text="Backup")
         nb.add(ConfigPanel(nb), text="Config Builder")
         nb.add(ConvertPanel(nb), text="Converter")
-        nb.add(FortiPanel(nb), text="FortiGate")
-        nb.add(UpgradePanel(nb), text="Upgrade")
+        nb.add(ScrollTab(nb, FortiPanel), text="FortiGate")
+        nb.add(ScrollTab(nb, UpgradePanel), text="Upgrade")
 
         self._build_status()
         self.bind("<Control-q>", lambda e: self.destroy())

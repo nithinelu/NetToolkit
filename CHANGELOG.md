@@ -28,6 +28,8 @@ All notable changes to **NetToolkit**. Versioning follows
 - README updated with the two new tabs and an Upgrade how-to.
 - Upgrade tab log is now scrollable and written to `logs\upgrade_*.log`, with
   Clear / Save log / Open logs folder buttons.
+- FortiGate and Upgrade tabs are now vertically scrollable, so the log console
+  is no longer squeezed to zero height on smaller windows.
 
 ### Fixed
 - TFTP transfers of large images stalling with "no ACK": the server now caps
