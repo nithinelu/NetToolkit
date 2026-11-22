@@ -23,6 +23,9 @@ All notable changes to **NetToolkit**. Versioning follows
   - **Batch upgrade from an Excel inventory** (many devices at once): per-device
     MD5 gating (set-boot/reload only on a match), a `reload=yes` + "Allow
     reload" safety toggle, inventory template generator, and a pass/fail summary.
+  - **SCP transfer** option (reliable, over the SSH session, built-in MD5) as the
+    default alternative to TFTP, plus a **Stop** button to cancel a running or
+    stuck operation.
 
 ### Changed
 - README updated with the two new tabs and an Upgrade how-to.

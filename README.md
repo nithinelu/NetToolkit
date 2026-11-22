@@ -40,6 +40,10 @@ See [CHANGELOG.md](CHANGELOG.md) for the full history.
 The Config Builder and Converter tabs work with no extra packages; only the
 Backup tab needs Netmiko/openpyxl.
 
+**Transfer method** — choose **SCP** (default; reliable over the SSH session,
+no TFTP server or extra firewall ports, verifies MD5 automatically) or **TFTP**
+(the built-in server). A **Stop** button cancels a running or stuck operation.
+
 ## Tab 1 — Backup
 - *Single device* or *From Excel* (host/username/password required; optional
   protocol, family, enable secret, port, name). A **Create template** button

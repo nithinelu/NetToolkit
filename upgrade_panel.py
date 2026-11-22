@@ -22,6 +22,7 @@ class UpgradePanel(ttk.Frame):
         self.server: tftp.TftpServer | None = None
         self.conn = None
         self.worker: threading.Thread | None = None
+        self._cancel = threading.Event()
         self.local_md5_val = ""
         self._log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                      "logs")
@@ -67,15 +68,43 @@ class UpgradePanel(ttk.Frame):
 
     def _busy(self) -> bool:
         if self.worker and self.worker.is_alive():
-            messagebox.showinfo("Busy", "Another operation is still running.")
+            messagebox.showinfo(
+                "Busy", "Another operation is still running.\n\nUse the Stop "
+                "button to cancel it.")
             return True
         return False
+
+    def cancelled(self) -> bool:
+        return self._cancel.is_set()
 
     def _run(self, fn):
         if self._busy():
             return
-        self.worker = threading.Thread(target=fn, daemon=True)
+        self._cancel.clear()
+
+        def wrapped():
+            try:
+                fn()
+            except Exception as exc:  # noqa: BLE001
+                self.log(f"Task ended with error: {exc}")
+        self.worker = threading.Thread(target=wrapped, daemon=True)
         self.worker.start()
+
+    def stop_task(self):
+        """Cancel the running operation and free the panel."""
+        if not (self.worker and self.worker.is_alive()):
+            self.log("Nothing running.")
+            return
+        self._cancel.set()
+        self.log("Stop requested - cancelling current operation ...")
+        # disconnect to interrupt any blocking device I/O (unblocks the worker)
+        c = self.conn
+        if c is not None:
+            self.conn = None
+            threading.Thread(target=lambda: up.disconnect(c, self._qlog),
+                             daemon=True).start()
+            self.conn_btn.configure(text="Connect")
+            self.conn_status.configure(text="not connected")
 
     # -- UI ----------------------------------------------------------------
     def _build(self):
@@ -162,9 +191,20 @@ class UpgradePanel(ttk.Frame):
         self.conn_status.pack(side="left", padx=6)
 
         # ---- Actions ----
+        mrow = ttk.Frame(self)
+        mrow.pack(fill="x", pady=(6, 0))
+        ttk.Label(mrow, text="Transfer method:").pack(side="left")
+        ttk.Combobox(mrow, textvariable=self._v("method", "SCP (over SSH)"),
+                     values=["SCP (over SSH)", "TFTP (server)"],
+                     state="readonly", width=16).pack(side="left", padx=(4, 12))
+        ttk.Label(mrow, style="Muted.TLabel",
+                  text="SCP is reliable over the SSH session (no TFTP server / "
+                       "firewall ports needed).").pack(side="left")
+        ttk.Button(mrow, text="STOP", command=self.stop_task).pack(side="right")
+
         act = ttk.Frame(self)
-        act.pack(fill="x", pady=(6, 0))
-        ttk.Button(act, text="1. Upload via TFTP", style="Accent.TButton",
+        act.pack(fill="x", pady=(4, 0))
+        ttk.Button(act, text="1. Upload image", style="Accent.TButton",
                    command=self.do_upload).pack(side="left", padx=2)
         ttk.Button(act, text="2. Verify MD5 on device",
                    command=self.do_verify).pack(side="left", padx=2)
@@ -403,23 +443,40 @@ class UpgradePanel(ttk.Frame):
     def do_upload(self):
         if not self._need_conn():
             return
+        use_scp = self.method.get().startswith("SCP")
+        img = self.image_path.get().strip()
+        fname = self.dest_name.get().strip() or os.path.basename(img)
+        if not fname:
+            messagebox.showwarning("File", "Select an image / dest filename.")
+            return
+
+        if use_scp:
+            if not img or not os.path.isfile(img):
+                messagebox.showwarning(
+                    "Image", "SCP needs the local image file - pick it in the "
+                    "'Firmware image' section.")
+                return
+
+            def task():
+                self.log("=== Upload via SCP ===")
+                up.scp_copy_to_device(self.conn, img, dest_name=fname,
+                                      dest_fs=self.dest_fs.get(), log=self._qlog)
+            self._run(task)
+            return
+
+        # TFTP
         if not (self.server and self.server.running):
             if not messagebox.askyesno(
                     "TFTP server", "The local TFTP server is not running. "
                     "The device won't be able to pull the image. Continue "
                     "anyway?"):
                 return
-        fname = self.dest_name.get().strip() or os.path.basename(
-            self.image_path.get().strip())
-        if not fname:
-            messagebox.showwarning("File", "Select an image / dest filename.")
-            return
 
         def task():
             self.log("=== Upload via TFTP ===")
             up.tftp_copy_to_device(self.conn, self.tftp_ip.get(), fname,
                                    dest_fs=self.dest_fs.get(), dest_name=fname,
-                                   log=self._qlog)
+                                   log=self._qlog, cancel=self.cancelled)
         self._run(task)
 
     def do_verify(self):
@@ -523,10 +580,12 @@ class UpgradePanel(ttk.Frame):
         if not path or not os.path.isfile(path):
             messagebox.showwarning("Inventory", "Choose a valid Excel inventory.")
             return
-        if not (self.server and self.server.running):
+        use_scp = self.method.get().startswith("SCP")
+        if not use_scp and not (self.server and self.server.running):
             messagebox.showwarning(
                 "TFTP server", "Start the local TFTP server first - the "
-                "devices pull the image from it.")
+                "devices pull the image from it. (Or switch the transfer "
+                "method to SCP.)")
             return
         try:
             rows = up.read_inventory(path, self._qlog)
@@ -540,7 +599,9 @@ class UpgradePanel(ttk.Frame):
         steps = {"upload": self.b_upload.get(), "verify": self.b_verify.get(),
                  "set_boot": self.b_setboot.get(),
                  "allow_reload": self.b_reload.get(),
-                 "clear_boot": self.clear_boot.get()}
+                 "clear_boot": self.clear_boot.get(),
+                 "method": "scp" if self.method.get().startswith("SCP")
+                 else "tftp"}
         if steps["allow_reload"]:
             if not messagebox.askyesno(
                     "Reload enabled",
@@ -555,5 +616,6 @@ class UpgradePanel(ttk.Frame):
 
         def task():
             self.log(f"\n######## BATCH UPGRADE - {len(rows)} device(s) ########")
-            up.run_batch(rows, self.tftp_ip.get(), root, steps, self._qlog)
+            up.run_batch(rows, self.tftp_ip.get(), root, steps, self._qlog,
+                         cancel=self.cancelled)
         self._run(task)

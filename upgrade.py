@@ -72,13 +72,40 @@ _COPY_ANSWERS = [
 ]
 
 
+def scp_copy_to_device(conn, source_path: str, dest_name: Optional[str] = None,
+                       dest_fs: str = "flash:", log: Optional[Logger] = None,
+                       enable_scp: bool = True) -> dict:
+    """Upload a local file to the device over SCP (reliable, over the SSH
+    session - no TFTP server or extra firewall ports). Netmiko verifies MD5."""
+    from netmiko import file_transfer
+    log = log or (lambda m: None)
+    dest_name = dest_name or os.path.basename(source_path)
+    if enable_scp:
+        log("Enabling SCP server on device (ip scp server enable) ...")
+        try:
+            conn.send_config_set(["ip scp server enable"])
+        except Exception as exc:  # noqa: BLE001
+            log(f"  (could not enable scp server: {exc})")
+    log(f"SCP uploading {os.path.basename(source_path)} -> {dest_fs}{dest_name} "
+        "(this can take a while) ...")
+    res = file_transfer(conn, source_file=source_path, dest_file=dest_name,
+                        file_system=dest_fs, direction="put",
+                        overwrite_file=True)
+    log(f"  exists={res.get('file_exists')} "
+        f"transferred={res.get('file_transferred')} "
+        f"md5_verified={res.get('file_verified')}")
+    return res
+
+
 def tftp_copy_to_device(conn, tftp_ip: str, filename: str,
                         dest_fs: str = "flash:", dest_name: Optional[str] = None,
                         log: Optional[Logger] = None,
-                        read_timeout: int = 1800) -> str:
+                        read_timeout: int = 1800,
+                        cancel: Optional[Callable[[], bool]] = None) -> str:
     """Pull `filename` from the TFTP server at `tftp_ip` into `dest_fs`.
 
     Drives the interactive IOS copy dialog. Returns the full session text.
+    `cancel` (if given) is polled to abort early.
     """
     log = log or (lambda m: None)
     dest_name = dest_name or filename
@@ -93,6 +120,9 @@ def tftp_copy_to_device(conn, tftp_ip: str, filename: str,
     start = time.time()
     idle = 0
     while time.time() - start < read_timeout:
+        if cancel and cancel():
+            log("Upload cancelled by user.")
+            return full
         low = out.lower()
         if any(s in low for s in ("bytes copied", "[ok -", "[ok]")):
             log("Transfer complete.")
@@ -290,7 +320,8 @@ def _yes(val: str) -> bool:
 
 
 def upgrade_one(row: dict, tftp_ip: str, tftp_root: str, steps: dict,
-                md5_cache: dict, log: Logger) -> dict:
+                md5_cache: dict, log: Logger,
+                cancel: Optional[Callable[[], bool]] = None) -> dict:
     """Run the selected upgrade steps on one device; return a result dict."""
     import cisco_backup as cb
     host = row["host"]
@@ -318,8 +349,12 @@ def upgrade_one(row: dict, tftp_ip: str, tftp_root: str, steps: dict,
         conn = connect(dev, log)
 
         if steps.get("upload") and image:
-            tftp_copy_to_device(conn, tftp_ip, image, dest_fs=dest_fs,
-                                dest_name=dest_name, log=log)
+            if steps.get("method") == "scp" and img_path:
+                scp_copy_to_device(conn, img_path, dest_name=dest_name,
+                                   dest_fs=dest_fs, log=log)
+            else:
+                tftp_copy_to_device(conn, tftp_ip, image, dest_fs=dest_fs,
+                                    dest_name=dest_name, log=log, cancel=cancel)
             res["actions"].append("upload")
 
         if steps.get("verify"):
@@ -357,15 +392,18 @@ def upgrade_one(row: dict, tftp_ip: str, tftp_root: str, steps: dict,
 
 
 def run_batch(rows: list, tftp_ip: str, tftp_root: str, steps: dict,
-              log: Logger) -> list:
+              log: Logger, cancel: Optional[Callable[[], bool]] = None) -> list:
     """Run upgrade_one across all rows sequentially; return result list."""
     md5_cache: dict = {}
     results = []
     total = len(rows)
     for i, row in enumerate(rows, 1):
+        if cancel and cancel():
+            log("\nBatch cancelled by user.")
+            break
         log(f"\n--- [{i}/{total}] ---")
         results.append(upgrade_one(row, tftp_ip, tftp_root, steps, md5_cache,
-                                   log))
+                                   log, cancel=cancel))
     ok = sum(1 for r in results if r["success"] and r["match"] is not False)
     log("\n" + "=" * 50)
     log(f"Batch complete: {ok}/{total} device(s) OK")
