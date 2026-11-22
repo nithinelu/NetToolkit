@@ -98,6 +98,14 @@ security policies, etc.). Keep credentials and backup files somewhere safe.
    `copy tftp:` dialog), **Verify MD5 on device** (`verify /md5` vs. the local
    hash), **Set boot & save**, and optionally **Reload** (with confirmation).
 
+**Batch from Excel** — upgrade many devices at once from an inventory
+(`host, protocol, username, password, secret, image, dest_fs, dest_name,
+expected_md5, set_boot, reload`). Use **Create template** to get the sheet.
+Choose which steps to run (Upload / Verify MD5 / Set boot & save / Allow
+reload); **set-boot and reload only run on a device whose MD5 matches**, and
+reload additionally requires both the row's `reload=yes` and the **Allow
+reload** safety toggle. A pass/fail summary is printed at the end.
+
 Upload/verify/boot/reload act on a **real device** — review and test on one unit
 first. Reload reboots the device and drops the session.
 

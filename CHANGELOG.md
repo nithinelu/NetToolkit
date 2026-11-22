@@ -3,6 +3,16 @@
 All notable changes to **NetToolkit**. Versioning follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Upgrade — batch from Excel inventory**: upgrade many Cisco devices from a
+  spreadsheet (`host/credentials/image/dest/expected_md5/set_boot/reload`).
+  Per-device MD5 gating (set-boot/reload only on a match) and a `reload=yes` +
+  "Allow reload" safety toggle. Inventory template generator and pass/fail
+  summary. (`read_inventory` / `make_inventory_template` / `run_batch` in
+  `upgrade.py`.)
+
 ## [1.1.0] - 2026-11-22
 
 ### Added

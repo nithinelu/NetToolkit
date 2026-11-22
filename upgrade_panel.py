@@ -160,6 +160,42 @@ class UpgradePanel(ttk.Frame):
         ttk.Checkbutton(act, text="clear old boot entries",
                         variable=self.clear_boot).pack(side="left", padx=(12, 0))
 
+        # ---- Batch from Excel inventory ----
+        batch = ttk.LabelFrame(
+            self, text="Batch upgrade from Excel inventory", padding=8)
+        batch.pack(fill="x", pady=(6, 0))
+        batch.columnconfigure(1, weight=1)
+        ttk.Label(batch, text="Inventory:").grid(row=0, column=0, sticky="w")
+        ttk.Entry(batch, textvariable=self._v("inv_path")).grid(
+            row=0, column=1, sticky="ew", padx=4)
+        ttk.Button(batch, text="Browse...", command=self._browse_inv).grid(
+            row=0, column=2)
+        ttk.Button(batch, text="Create template...",
+                   command=self._inv_template).grid(row=0, column=3, padx=(4, 0))
+        steps = ttk.Frame(batch)
+        steps.grid(row=1, column=0, columnspan=4, sticky="w", pady=(6, 0))
+        self.b_upload = tk.BooleanVar(value=True)
+        self.b_verify = tk.BooleanVar(value=True)
+        self.b_setboot = tk.BooleanVar(value=False)
+        self.b_reload = tk.BooleanVar(value=False)
+        ttk.Label(steps, text="Steps:").pack(side="left")
+        ttk.Checkbutton(steps, text="Upload", variable=self.b_upload).pack(
+            side="left", padx=4)
+        ttk.Checkbutton(steps, text="Verify MD5", variable=self.b_verify).pack(
+            side="left", padx=4)
+        ttk.Checkbutton(steps, text="Set boot & save",
+                        variable=self.b_setboot).pack(side="left", padx=4)
+        ttk.Checkbutton(steps, text="Allow reload", variable=self.b_reload).pack(
+            side="left", padx=4)
+        ttk.Button(batch, text="Run batch upgrade", style="Accent.TButton",
+                   command=self.do_batch).grid(row=2, column=1, sticky="w",
+                                               pady=(6, 0))
+        ttk.Label(batch, style="Muted.TLabel",
+                  text="Images must be in the TFTP serve folder; the server "
+                       "must be running. Set-boot/reload only run when MD5 "
+                       "matches.").grid(row=3, column=0, columnspan=4,
+                                        sticky="w", pady=(4, 0))
+
         # ---- Log ----
         ttk.Label(self, text="Log:").pack(anchor="w", pady=(8, 0))
         self.txt = tk.Text(self, height=12, wrap="none",
@@ -374,4 +410,68 @@ class UpgradePanel(ttk.Frame):
             self.after(0, lambda: (self.conn_btn.configure(text="Connect"),
                                    self.conn_status.configure(
                                        text="rebooting...")))
+        self._run(task)
+
+    # -- batch (Excel inventory) -------------------------------------------
+    def _browse_inv(self):
+        f = filedialog.askopenfilename(
+            title="Select upgrade inventory",
+            filetypes=[("Excel", "*.xlsx"), ("All files", "*.*")])
+        if f:
+            self.inv_path.set(f)
+
+    def _inv_template(self):
+        path = filedialog.asksaveasfilename(
+            title="Save inventory template", defaultextension=".xlsx",
+            initialfile="upgrade_inventory.xlsx",
+            filetypes=[("Excel", "*.xlsx")])
+        if not path:
+            return
+        try:
+            up.make_inventory_template(path)
+            self.inv_path.set(path)
+            messagebox.showinfo("Template", f"Inventory template written to:\n{path}")
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Error", str(exc))
+
+    def do_batch(self):
+        if self._busy():
+            return
+        path = self.inv_path.get().strip()
+        if not path or not os.path.isfile(path):
+            messagebox.showwarning("Inventory", "Choose a valid Excel inventory.")
+            return
+        if not (self.server and self.server.running):
+            messagebox.showwarning(
+                "TFTP server", "Start the local TFTP server first - the "
+                "devices pull the image from it.")
+            return
+        try:
+            rows = up.read_inventory(path, self._qlog)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Inventory", str(exc))
+            return
+        if not rows:
+            messagebox.showwarning("Inventory", "No devices found.")
+            return
+        root = self.tftp_root.get().strip()
+        steps = {"upload": self.b_upload.get(), "verify": self.b_verify.get(),
+                 "set_boot": self.b_setboot.get(),
+                 "allow_reload": self.b_reload.get(),
+                 "clear_boot": self.clear_boot.get()}
+        if steps["allow_reload"]:
+            if not messagebox.askyesno(
+                    "Reload enabled",
+                    f"'Allow reload' is ON. Devices whose inventory row has "
+                    f"reload=yes WILL be rebooted after a successful, "
+                    f"MD5-verified upload.\n\nRun the batch on {len(rows)} "
+                    f"device(s)?", icon="warning"):
+                return
+        elif not messagebox.askyesno(
+                "Run batch", f"Run the selected steps on {len(rows)} device(s)?"):
+            return
+
+        def task():
+            self.log(f"\n######## BATCH UPGRADE - {len(rows)} device(s) ########")
+            up.run_batch(rows, self.tftp_ip.get(), root, steps, self._qlog)
         self._run(task)
