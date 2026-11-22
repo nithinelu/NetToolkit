@@ -90,12 +90,19 @@ class TftpServer:
             if len(data) < 2:
                 continue
             opcode = struct.unpack("!H", data[:2])[0]
-            if opcode == RRQ:
-                threading.Thread(target=self._handle_rrq,
-                                 args=(data[2:], client), daemon=True).start()
-            elif opcode == WRQ:
-                threading.Thread(target=self._handle_wrq,
-                                 args=(data[2:], client), daemon=True).start()
+            # Transfers run on THIS listening socket (port 69) rather than a
+            # new ephemeral port. The device already reaches port 69 (the RRQ
+            # arrived), so replies from the same port avoid the Windows
+            # ephemeral-port / firewall return-path problem. Transfers are
+            # handled inline (serialized), which is fine for firmware pushes.
+            try:
+                if opcode == RRQ:
+                    self._handle_rrq(data[2:], client)
+                elif opcode == WRQ:
+                    self._handle_wrq(data[2:], client)
+                # stray ACK/other packets outside a transfer are ignored
+            except OSError as exc:
+                self.log(f"  transfer error: {exc}")
 
     # -- request parsing ---------------------------------------------------
     @staticmethod
@@ -114,12 +121,6 @@ class TftpServer:
 
     def _safe_path(self, filename: str) -> str:
         return os.path.join(self.root, os.path.basename(filename))
-
-    def _new_transfer_socket(self) -> socket.socket:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.bind((self.bind_ip, 0))
-        s.settimeout(5.0)
-        return s
 
     @staticmethod
     def _error(sock, addr, code: int, msg: str):
@@ -142,9 +143,7 @@ class TftpServer:
         path = self._safe_path(filename)
         self.log(f"RRQ from {client[0]}:{client[1]} -> {os.path.basename(path)}")
         if not os.path.isfile(path):
-            s = self._new_transfer_socket()
-            self._error(s, client, 1, "File not found")
-            s.close()
+            self._error(self._sock, client, 1, "File not found")
             self.log(f"  file not found: {path}")
             return
 
@@ -166,19 +165,20 @@ class TftpServer:
         if "timeout" in opts:
             negotiated["timeout"] = opts["timeout"]
 
-        s = self._new_transfer_socket()
         try:
             with open(path, "rb") as fh:
                 if negotiated:
-                    if not self._send_expect_ack(s, self._oack(negotiated),
+                    if not self._send_expect_ack(self._sock, self._oack(negotiated),
                                                  client, 0):
+                        self.log("  transfer failed (no OACK ack)")
                         return
                 block = 1
                 while True:
                     chunk = fh.read(blksize)
                     pkt = struct.pack("!HH", DATA, block & 0xFFFF) + chunk
-                    if not self._send_expect_ack(s, pkt, client, block & 0xFFFF):
-                        self.log("  transfer failed (no ACK)")
+                    if not self._send_expect_ack(self._sock, pkt, client,
+                                                 block & 0xFFFF):
+                        self.log(f"  transfer failed (no ACK at block {block})")
                         return
                     if len(chunk) < blksize:
                         break
@@ -186,15 +186,13 @@ class TftpServer:
             self.log(f"  sent {filesize} bytes OK")
         except OSError as exc:
             self.log(f"  read error: {exc}")
-        finally:
-            s.close()
 
     def _send_expect_ack(self, sock, pkt, addr, expect_block, retries=5) -> bool:
         for _ in range(retries):
             try:
                 sock.sendto(pkt, addr)
                 while True:
-                    data, raddr = sock.recvfrom(1024)
+                    data, raddr = sock.recvfrom(2048)
                     if raddr[0] != addr[0]:
                         continue
                     if len(data) >= 4 and struct.unpack("!H", data[:2])[0] == ACK:
@@ -216,9 +214,7 @@ class TftpServer:
         path = self._safe_path(filename)
         self.log(f"WRQ from {client[0]}:{client[1]} -> {os.path.basename(path)}")
         if not self.allow_write:
-            s = self._new_transfer_socket()
-            self._error(s, client, 2, "Writes disabled")
-            s.close()
+            self._error(self._sock, client, 2, "Writes disabled")
             return
         blksize = DEFAULT_BLKSIZE
         negotiated = {}
@@ -231,21 +227,24 @@ class TftpServer:
         if "timeout" in opts:
             negotiated["timeout"] = opts["timeout"]
 
-        s = self._new_transfer_socket()
         try:
             # acknowledge: OACK if options, else ACK block 0
             first = self._oack(negotiated) if negotiated else struct.pack(
                 "!HH", ACK, 0)
             total = 0
+            misses = 0
             with open(path, "wb") as fh:
                 expected = 1
-                s.sendto(first, client)
+                self._sock.sendto(first, client)
                 while True:
                     try:
-                        data, raddr = s.recvfrom(blksize + 4)
+                        data, raddr = self._sock.recvfrom(blksize + 4)
                     except socket.timeout:
-                        self.log("  write timeout")
-                        return
+                        misses += 1
+                        if misses >= 5:
+                            self.log("  write timeout")
+                            return
+                        continue
                     if raddr[0] != client[0]:
                         continue
                     if len(data) < 4:
@@ -253,22 +252,20 @@ class TftpServer:
                     op, blk = struct.unpack("!HH", data[:4])
                     if op != DATA:
                         continue
+                    misses = 0
                     if blk == expected:
                         chunk = data[4:]
                         fh.write(chunk)
                         total += len(chunk)
-                        s.sendto(struct.pack("!HH", ACK, blk), client)
+                        self._sock.sendto(struct.pack("!HH", ACK, blk), client)
                         expected = (expected + 1) & 0xFFFF
                         if len(chunk) < blksize:
                             break
                     else:
-                        # re-ack previous
-                        s.sendto(struct.pack("!HH", ACK, blk), client)
+                        self._sock.sendto(struct.pack("!HH", ACK, blk), client)
             self.log(f"  received {total} bytes OK")
         except OSError as exc:
             self.log(f"  write error: {exc}")
-        finally:
-            s.close()
 
 
 def local_ips() -> list:

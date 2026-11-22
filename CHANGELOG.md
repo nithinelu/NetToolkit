@@ -32,9 +32,13 @@ All notable changes to **NetToolkit**. Versioning follows
   is no longer squeezed to zero height on smaller windows.
 
 ### Fixed
-- TFTP transfers of large images stalling with "no ACK": the server now caps
-  the negotiated block size to an MTU-safe 1468 bytes, so DATA packets are not
-  fragmented (and dropped) on routed paths.
+- TFTP transfers failing with "no ACK": the server now runs the whole transfer
+  from the listening port (e.g. 69) instead of a new ephemeral port, so a device
+  that can reach port 69 can also reach the data stream (fixes Windows
+  ephemeral-port / firewall return-path failures).
+- TFTP transfers of large images stalling: the negotiated block size is capped
+  to an MTU-safe 1468 bytes, so DATA packets are not fragmented (and dropped) on
+  routed paths.
 
 ## [1.0.0] - 2026-11-04
 
