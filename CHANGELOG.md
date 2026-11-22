@@ -37,6 +37,10 @@ All notable changes to **NetToolkit**. Versioning follows
   is no longer squeezed to zero height on smaller windows.
 
 ### Fixed
+- SCP upload killing the SSH session: SCP now runs on its own dedicated SSH
+  connection, so the device closing the SCP channel at end-of-transfer no longer
+  breaks the main session (verify / set-boot / reload keep working). The normal
+  IOS end-of-transfer channel close is treated as success.
 - TFTP transfers failing with "no ACK": the server now runs the whole transfer
   from the listening port (e.g. 69) instead of a new ephemeral port, so a device
   that can reach port 69 can also reach the data stream (fixes Windows

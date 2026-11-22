@@ -83,13 +83,14 @@ def scp_copy_to_device(conn, source_path: str, dest_name: Optional[str] = None,
     `progress(filename, bytes_sent, total_bytes)` is called during transfer.
     Uses the scp library over Netmiko's existing SSH transport.
     """
+    import paramiko
+    from paramiko.ssh_exception import SSHException
     from scp import SCPClient
     log = log or (lambda m: None)
     dest_name = dest_name or os.path.basename(source_path)
 
-    transport = getattr(conn, "remote_conn_pre", None)
-    transport = transport.get_transport() if transport is not None else None
-    if transport is None:
+    host = getattr(conn, "host", None)
+    if not host or getattr(conn, "protocol", "ssh") == "telnet":
         raise RuntimeError("SCP requires an SSH connection (telnet not "
                            "supported for SCP).")
 
@@ -101,11 +102,10 @@ def scp_copy_to_device(conn, source_path: str, dest_name: Optional[str] = None,
             log(f"  (could not enable scp server: {exc})")
 
     size = os.path.getsize(source_path)
-    log(f"SCP uploading {os.path.basename(source_path)} "
-        f"({size / 1048576:.1f} MB) -> {dest_fs}{dest_name} ...")
+    last = [0]
 
     def _prog(filename, total, sent):
-        # scp lib passes (filename, size, sent); forward as (name, sent, total)
+        last[0] = sent
         if progress:
             try:
                 progress(os.path.basename(
@@ -114,12 +114,37 @@ def scp_copy_to_device(conn, source_path: str, dest_name: Optional[str] = None,
             except Exception:  # noqa: BLE001
                 pass
 
-    scp = SCPClient(transport, progress=_prog, socket_timeout=60.0)
+    # Use a DEDICATED SSH session for SCP so the IOS device tearing down the
+    # SCP channel at the end doesn't kill the main Netmiko shell connection
+    # (which the verify / set-boot / reload steps still need).
+    log(f"SCP uploading {os.path.basename(source_path)} "
+        f"({size / 1048576:.1f} MB) -> {dest_fs}{dest_name} ...")
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(host, port=int(getattr(conn, "port", 22) or 22),
+                username=getattr(conn, "username", ""),
+                password=getattr(conn, "password", ""),
+                look_for_keys=False, allow_agent=False, timeout=30)
+    scp = SCPClient(ssh.get_transport(), progress=_prog, socket_timeout=60.0)
     try:
         scp.put(source_path, f"{dest_fs}{dest_name}")
+    except (SSHException, OSError, EOFError) as exc:
+        # IOS commonly closes the SCP channel abruptly once the file is in;
+        # if all bytes were sent, treat it as a successful transfer.
+        if last[0] >= size:
+            log("  device closed the SCP channel after transfer (normal on IOS).")
+        else:
+            raise RuntimeError(f"SCP failed after {last[0]}/{size} bytes: {exc}")
     finally:
-        scp.close()
-    log("SCP transfer complete.")
+        try:
+            scp.close()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            ssh.close()
+        except Exception:  # noqa: BLE001
+            pass
+    log("SCP transfer complete. Run 'Verify MD5 on device' to confirm.")
     return {"file_transferred": True}
 
 
