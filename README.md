@@ -18,6 +18,9 @@ tabs in one window:
    interfaces, routing, DHCP), deployment (address objects, IP pools, VIPs,
    firewall policies with NAT + AV/Web/IPS/App + SSL inspection), and
    operations (syslog, FortiAnalyzer, SNMP, HA, auto-updates).
+5. **Upgrade** — push a firmware image to a Cisco IOS/IOS-XE device with a
+   **built-in TFTP server**, run the upgrade commands, and verify integrity by
+   **MD5** (local file vs. `verify /md5` on the device).
 
 ## Run it
 
@@ -75,7 +78,20 @@ security policies, etc.). Keep credentials and backup files somewhere safe.
 | `config_builder.py` | Config generation engine + CLI/wizard |
 | `vendor_convert.py` | Multi-vendor converter engine + CLI |
 | `forti_builder.py` | FortiGate (FortiOS) config engine + CLI |
-| `backup_panel.py` / `config_panel.py` / `convert_panel.py` / `forti_panel.py` | Tab UIs |
+| `tftp_server.py` | Built-in TFTP server (RRQ/WRQ, blksize/tsize) |
+| `upgrade.py` | IOS upgrade helpers (copy, verify /md5, boot, reload) |
+| `*_panel.py` (backup/config/convert/forti/upgrade) | Tab UIs |
+
+### Upgrade tab — how it works
+1. **Start the TFTP server** on a reachable interface (default port 69 — needs
+   the Windows firewall to allow it; use a higher port if 69 is blocked/in use).
+2. **Pick the image**; its local **MD5** is computed (compare to the vendor's).
+3. **Connect** to the device, then **Upload via TFTP** (drives the IOS
+   `copy tftp:` dialog), **Verify MD5 on device** (`verify /md5` vs. the local
+   hash), **Set boot & save**, and optionally **Reload** (with confirmation).
+
+Upload/verify/boot/reload act on a **real device** — review and test on one unit
+first. Reload reboots the device and drops the session.
 
 ### FortiGate notes
 The FortiGate tab generates **FortiOS 7.x CLI** grouped as Day 0 / Day 1 /

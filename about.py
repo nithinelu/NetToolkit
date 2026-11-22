@@ -7,7 +7,7 @@ AUTHOR = "Nithin Eluvathingal"
 YEAR = "2026"
 LICENSE = "MIT License"
 TAGLINE = ("Backup  •  Config Builder  •  Converter  •  "
-           "FortiGate")
+           "FortiGate  •  Upgrade")
 COPYRIGHT = f"© {YEAR} {AUTHOR}"
 
 DESCRIPTION = (
@@ -19,7 +19,9 @@ DESCRIPTION = (
     "•  Converter — translate switch configs between Cisco, Arista, "
     "Aruba, Huawei and HPE Comware.\n"
     "•  FortiGate — build FortiOS firewall configs, Day 0 (system "
-    "bring-up) through Day 100 (operations & hardening)."
+    "bring-up) through Day 100 (operations & hardening).\n"
+    "•  Upgrade — built-in TFTP server, push an IOS image, run the "
+    "upgrade commands and verify MD5 on the device."
 )
 
 LICENSE_BLURB = (
