@@ -26,6 +26,13 @@ All notable changes to **NetToolkit**. Versioning follows
 
 ### Changed
 - README updated with the two new tabs and an Upgrade how-to.
+- Upgrade tab log is now scrollable and written to `logs\upgrade_*.log`, with
+  Clear / Save log / Open logs folder buttons.
+
+### Fixed
+- TFTP transfers of large images stalling with "no ACK": the server now caps
+  the negotiated block size to an MTU-safe 1468 bytes, so DATA packets are not
+  fragmented (and dropped) on routed paths.
 
 ## [1.0.0] - 2026-11-04
 

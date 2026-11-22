@@ -27,18 +27,23 @@ from typing import Callable, Optional
 
 RRQ, WRQ, DATA, ACK, ERROR, OACK = 1, 2, 3, 4, 5, 6
 DEFAULT_BLKSIZE = 512
+# Cap negotiated block size to stay within a typical 1500-byte MTU
+# (1468 data + 4 TFTP + 8 UDP + 20 IP = 1500). Larger blocks get fragmented
+# and the fragments are often dropped on routed paths, stalling the transfer.
+MAX_BLKSIZE = 1468
 MODES = ("netascii", "octet")
 
 
 class TftpServer:
     def __init__(self, root: str, bind_ip: str = "0.0.0.0", port: int = 69,
                  log: Optional[Callable[[str], None]] = None,
-                 allow_write: bool = True):
+                 allow_write: bool = True, max_blksize: int = MAX_BLKSIZE):
         self.root = os.path.abspath(root)
         self.bind_ip = bind_ip
         self.port = int(port)
         self.log = log or (lambda m: None)
         self.allow_write = allow_write
+        self.max_blksize = int(max_blksize)
         self._sock: Optional[socket.socket] = None
         self._thread: Optional[threading.Thread] = None
         self._running = False
@@ -148,8 +153,12 @@ class TftpServer:
         negotiated = {}
         if "blksize" in opts:
             try:
-                blksize = max(8, min(65464, int(opts["blksize"])))
-                negotiated["blksize"] = blksize
+                requested = int(opts["blksize"])
+                blksize = max(8, min(self.max_blksize, requested))
+                negotiated["blksize"] = blksize   # may be smaller than requested
+                if blksize < requested:
+                    self.log(f"  capping blksize {requested} -> {blksize} "
+                             "(avoids UDP fragmentation)")
             except ValueError:
                 pass
         if "tsize" in opts:
@@ -215,7 +224,7 @@ class TftpServer:
         negotiated = {}
         if "blksize" in opts:
             try:
-                blksize = max(8, min(65464, int(opts["blksize"])))
+                blksize = max(8, min(self.max_blksize, int(opts["blksize"])))
                 negotiated["blksize"] = blksize
             except ValueError:
                 pass

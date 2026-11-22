@@ -23,6 +23,10 @@ class UpgradePanel(ttk.Frame):
         self.conn = None
         self.worker: threading.Thread | None = None
         self.local_md5_val = ""
+        self._log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     "logs")
+        self._logfile = None
+        self._logfile_path = ""
         self._build()
         self.after(150, self._drain)
 
@@ -38,6 +42,7 @@ class UpgradePanel(ttk.Frame):
         self.log_queue.put(msg)
 
     def _drain(self):
+        fh = None
         try:
             while True:
                 line = self.log_queue.get_nowait()
@@ -45,8 +50,19 @@ class UpgradePanel(ttk.Frame):
                 self.txt.insert("end", line + "\n")
                 self.txt.see("end")
                 self.txt.configure(state="disabled")
+                fh = fh or self._logfile_handle()
+                if fh:
+                    try:
+                        fh.write(line + "\n")
+                    except OSError:
+                        pass
         except queue.Empty:
             pass
+        if fh:
+            try:
+                fh.flush()
+            except OSError:
+                pass
         self.after(150, self._drain)
 
     def _busy(self) -> bool:
@@ -196,14 +212,80 @@ class UpgradePanel(ttk.Frame):
                        "matches.").grid(row=3, column=0, columnspan=4,
                                         sticky="w", pady=(4, 0))
 
-        # ---- Log ----
-        ttk.Label(self, text="Log:").pack(anchor="w", pady=(8, 0))
-        self.txt = tk.Text(self, height=12, wrap="none",
+        # ---- Log (with scrollbars; also written to logs\upgrade_*.log) ----
+        logbar = ttk.Frame(self)
+        logbar.pack(fill="x", pady=(8, 0))
+        ttk.Label(logbar, text="Log:").pack(side="left")
+        ttk.Button(logbar, text="Clear view",
+                   command=self.clear_log).pack(side="right")
+        ttk.Button(logbar, text="Save log...",
+                   command=self.save_log).pack(side="right", padx=4)
+        ttk.Button(logbar, text="Open logs folder",
+                   command=self.open_logs).pack(side="right")
+        self.log_file_lbl = ttk.Label(logbar, style="Muted.TLabel", text="")
+        self.log_file_lbl.pack(side="left", padx=10)
+
+        wrap = ttk.Frame(self)
+        wrap.pack(fill="both", expand=True, pady=(2, 0))
+        yscroll = ttk.Scrollbar(wrap, orient="vertical")
+        xscroll = ttk.Scrollbar(wrap, orient="horizontal")
+        self.txt = tk.Text(wrap, height=14, wrap="none",
                            background=theme.CONSOLE_BG,
                            foreground=theme.CONSOLE_FG, font=theme.MONO_FONT,
-                           relief="flat", borderwidth=0, padx=8, pady=6)
-        self.txt.pack(fill="both", expand=True, pady=(2, 0))
+                           relief="flat", borderwidth=0, padx=8, pady=6,
+                           yscrollcommand=yscroll.set,
+                           xscrollcommand=xscroll.set)
+        yscroll.configure(command=self.txt.yview)
+        xscroll.configure(command=self.txt.xview)
+        yscroll.pack(side="right", fill="y")
+        xscroll.pack(side="bottom", fill="x")
+        self.txt.pack(side="left", fill="both", expand=True)
         self.txt.configure(state="disabled")
+
+    # -- logging to file ---------------------------------------------------
+    def _logfile_handle(self):
+        """Open (once) a per-session log file under the tool's logs folder."""
+        if self._logfile is not None:
+            return self._logfile
+        try:
+            import datetime
+            os.makedirs(self._log_dir, exist_ok=True)
+            path = os.path.join(
+                self._log_dir,
+                f"upgrade_{datetime.datetime.now():%Y%m%d_%H%M%S}.log")
+            self._logfile = open(path, "a", encoding="utf-8")
+            self._logfile_path = path
+            self.after(0, lambda: self.log_file_lbl.configure(
+                text="saving to " + os.path.basename(path)))
+        except OSError:
+            self._logfile = None
+        return self._logfile
+
+    def clear_log(self):
+        self.txt.configure(state="normal")
+        self.txt.delete("1.0", "end")
+        self.txt.configure(state="disabled")
+
+    def save_log(self):
+        text = self.txt.get("1.0", "end").strip()
+        if not text:
+            messagebox.showinfo("Save log", "The log is empty.")
+            return
+        path = filedialog.asksaveasfilename(
+            title="Save log", defaultextension=".log",
+            initialfile="upgrade.log",
+            filetypes=[("Log", "*.log *.txt"), ("All files", "*.*")])
+        if path:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text + "\n")
+            messagebox.showinfo("Saved", f"Log saved to:\n{path}")
+
+    def open_logs(self):
+        try:
+            os.makedirs(self._log_dir, exist_ok=True)
+            os.startfile(self._log_dir)  # noqa: S606 (Windows)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showinfo("Logs folder", f"{self._log_dir}\n\n{exc}")
 
     # -- TFTP server -------------------------------------------------------
     def _browse_root(self):
