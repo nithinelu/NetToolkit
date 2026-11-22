@@ -1,9 +1,9 @@
 # NetToolkit
 
-*by Nithin Eluvathingal — MIT Licensed*
+**v1.1.0** · *by Nithin Eluvathingal* · MIT Licensed
 
-A single Windows application that combines three network-engineering tools as
-tabs in one window:
+A single Windows application that combines network-engineering tools as tabs in
+one window:
 
 1. **Backup** — back up Cisco device configurations over **SSH or Telnet**,
    for a single device or a batch from **Excel**, with optional
@@ -21,6 +21,14 @@ tabs in one window:
 5. **Upgrade** — push a firmware image to a Cisco IOS/IOS-XE device with a
    **built-in TFTP server**, run the upgrade commands, and verify integrity by
    **MD5** (local file vs. `verify /md5` on the device).
+
+## What's new in 1.1.0
+- **FortiGate** tab — FortiOS Day 0 → Day 100 configuration builder.
+- **Upgrade** tab — built-in TFTP server, IOS image push, and MD5 verification.
+- App **icon**, **About** dialog, menu bar, and author/MIT-license shown in the
+  title bar, header, and status bar.
+
+See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ## Run it
 

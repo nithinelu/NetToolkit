@@ -2,7 +2,7 @@
 """Application metadata for NetToolkit (single source of truth)."""
 
 APP_NAME = "NetToolkit"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 AUTHOR = "Nithin Eluvathingal"
 YEAR = "2026"
 LICENSE = "MIT License"
