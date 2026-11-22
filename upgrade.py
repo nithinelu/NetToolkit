@@ -74,27 +74,53 @@ _COPY_ANSWERS = [
 
 def scp_copy_to_device(conn, source_path: str, dest_name: Optional[str] = None,
                        dest_fs: str = "flash:", log: Optional[Logger] = None,
-                       enable_scp: bool = True) -> dict:
+                       enable_scp: bool = True,
+                       progress: Optional[Callable[[str, int, int], None]] = None
+                       ) -> dict:
     """Upload a local file to the device over SCP (reliable, over the SSH
-    session - no TFTP server or extra firewall ports). Netmiko verifies MD5."""
-    from netmiko import file_transfer
+    session - no TFTP server or extra firewall ports), reporting progress.
+
+    `progress(filename, bytes_sent, total_bytes)` is called during transfer.
+    Uses the scp library over Netmiko's existing SSH transport.
+    """
+    from scp import SCPClient
     log = log or (lambda m: None)
     dest_name = dest_name or os.path.basename(source_path)
+
+    transport = getattr(conn, "remote_conn_pre", None)
+    transport = transport.get_transport() if transport is not None else None
+    if transport is None:
+        raise RuntimeError("SCP requires an SSH connection (telnet not "
+                           "supported for SCP).")
+
     if enable_scp:
         log("Enabling SCP server on device (ip scp server enable) ...")
         try:
             conn.send_config_set(["ip scp server enable"])
         except Exception as exc:  # noqa: BLE001
             log(f"  (could not enable scp server: {exc})")
-    log(f"SCP uploading {os.path.basename(source_path)} -> {dest_fs}{dest_name} "
-        "(this can take a while) ...")
-    res = file_transfer(conn, source_file=source_path, dest_file=dest_name,
-                        file_system=dest_fs, direction="put",
-                        overwrite_file=True)
-    log(f"  exists={res.get('file_exists')} "
-        f"transferred={res.get('file_transferred')} "
-        f"md5_verified={res.get('file_verified')}")
-    return res
+
+    size = os.path.getsize(source_path)
+    log(f"SCP uploading {os.path.basename(source_path)} "
+        f"({size / 1048576:.1f} MB) -> {dest_fs}{dest_name} ...")
+
+    def _prog(filename, total, sent):
+        # scp lib passes (filename, size, sent); forward as (name, sent, total)
+        if progress:
+            try:
+                progress(os.path.basename(
+                    filename.decode() if isinstance(filename, bytes)
+                    else filename), sent, total)
+            except Exception:  # noqa: BLE001
+                pass
+
+    scp = SCPClient(transport, progress=_prog, socket_timeout=60.0)
+    try:
+        scp.put(source_path, f"{dest_fs}{dest_name}")
+    finally:
+        scp.close()
+    log("SCP transfer complete.")
+    return {"file_transferred": True}
 
 
 def tftp_copy_to_device(conn, tftp_ip: str, filename: str,
@@ -321,7 +347,9 @@ def _yes(val: str) -> bool:
 
 def upgrade_one(row: dict, tftp_ip: str, tftp_root: str, steps: dict,
                 md5_cache: dict, log: Logger,
-                cancel: Optional[Callable[[], bool]] = None) -> dict:
+                cancel: Optional[Callable[[], bool]] = None,
+                progress: Optional[Callable[[str, int, int], None]] = None
+                ) -> dict:
     """Run the selected upgrade steps on one device; return a result dict."""
     import cisco_backup as cb
     host = row["host"]
@@ -351,7 +379,7 @@ def upgrade_one(row: dict, tftp_ip: str, tftp_root: str, steps: dict,
         if steps.get("upload") and image:
             if steps.get("method") == "scp" and img_path:
                 scp_copy_to_device(conn, img_path, dest_name=dest_name,
-                                   dest_fs=dest_fs, log=log)
+                                   dest_fs=dest_fs, log=log, progress=progress)
             else:
                 tftp_copy_to_device(conn, tftp_ip, image, dest_fs=dest_fs,
                                     dest_name=dest_name, log=log, cancel=cancel)
@@ -392,7 +420,8 @@ def upgrade_one(row: dict, tftp_ip: str, tftp_root: str, steps: dict,
 
 
 def run_batch(rows: list, tftp_ip: str, tftp_root: str, steps: dict,
-              log: Logger, cancel: Optional[Callable[[], bool]] = None) -> list:
+              log: Logger, cancel: Optional[Callable[[], bool]] = None,
+              progress: Optional[Callable[[str, int, int], None]] = None) -> list:
     """Run upgrade_one across all rows sequentially; return result list."""
     md5_cache: dict = {}
     results = []
@@ -403,7 +432,7 @@ def run_batch(rows: list, tftp_ip: str, tftp_root: str, steps: dict,
             break
         log(f"\n--- [{i}/{total}] ---")
         results.append(upgrade_one(row, tftp_ip, tftp_root, steps, md5_cache,
-                                   log, cancel=cancel))
+                                   log, cancel=cancel, progress=progress))
     ok = sum(1 for r in results if r["success"] and r["match"] is not False)
     log("\n" + "=" * 50)
     log(f"Batch complete: {ok}/{total} device(s) OK")

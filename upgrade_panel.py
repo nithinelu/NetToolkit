@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import queue
 import threading
+import time
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -23,6 +24,7 @@ class UpgradePanel(ttk.Frame):
         self.conn = None
         self.worker: threading.Thread | None = None
         self._cancel = threading.Event()
+        self._prog_state = {"pct": -1, "t": 0.0}
         self.local_md5_val = ""
         self._log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                      "logs")
@@ -76,6 +78,24 @@ class UpgradePanel(ttk.Frame):
 
     def cancelled(self) -> bool:
         return self._cancel.is_set()
+
+    def _reset_progress(self):
+        self._prog_state = {"pct": -1, "t": 0.0}
+        self.after(0, lambda: (self.progress_bar.configure(value=0),
+                               self.progress_var.set("")))
+
+    def _progress_cb(self, name, sent, total):
+        """Throttled progress update (<= ~3/sec, or on each new %)."""
+        pct = int(sent * 100 / total) if total else 0
+        now = time.time()
+        st = self._prog_state
+        if pct == st["pct"] and now - st["t"] < 0.3 and pct != 100:
+            return
+        st["pct"] = pct
+        st["t"] = now
+        txt = f"{pct}%  ({sent / 1048576:.1f}/{total / 1048576:.1f} MB)"
+        self.after(0, lambda: (self.progress_bar.configure(value=pct),
+                               self.progress_var.set(txt)))
 
     def _run(self, fn):
         if self._busy():
@@ -216,6 +236,16 @@ class UpgradePanel(ttk.Frame):
         ttk.Checkbutton(act, text="clear old boot entries",
                         variable=self.clear_boot).pack(side="left", padx=(12, 0))
 
+        # ---- Upload progress ----
+        prog = ttk.Frame(self)
+        prog.pack(fill="x", pady=(6, 0))
+        self.progress_bar = ttk.Progressbar(prog, orient="horizontal",
+                                            mode="determinate", maximum=100)
+        self.progress_bar.pack(side="left", fill="x", expand=True)
+        self.progress_var = tk.StringVar(value="")
+        ttk.Label(prog, textvariable=self.progress_var, style="Muted.TLabel",
+                  width=28, anchor="w").pack(side="left", padx=(8, 0))
+
         # ---- Batch from Excel inventory ----
         batch = ttk.LabelFrame(
             self, text="Batch upgrade from Excel inventory", padding=8)
@@ -351,7 +381,8 @@ class UpgradePanel(ttk.Frame):
             return
         try:
             self.server = tftp.TftpServer(root=root, bind_ip=self.tftp_ip.get(),
-                                          port=port, log=self._qlog)
+                                          port=port, log=self._qlog,
+                                          progress=self._progress_cb)
             self.server.start()
         except OSError as exc:
             messagebox.showerror(
@@ -457,10 +488,14 @@ class UpgradePanel(ttk.Frame):
                     "'Firmware image' section.")
                 return
 
+            self._reset_progress()
+
             def task():
                 self.log("=== Upload via SCP ===")
                 up.scp_copy_to_device(self.conn, img, dest_name=fname,
-                                      dest_fs=self.dest_fs.get(), log=self._qlog)
+                                      dest_fs=self.dest_fs.get(),
+                                      log=self._qlog,
+                                      progress=self._progress_cb)
             self._run(task)
             return
 
@@ -471,6 +506,8 @@ class UpgradePanel(ttk.Frame):
                     "The device won't be able to pull the image. Continue "
                     "anyway?"):
                 return
+
+        self._reset_progress()
 
         def task():
             self.log("=== Upload via TFTP ===")
@@ -617,5 +654,6 @@ class UpgradePanel(ttk.Frame):
         def task():
             self.log(f"\n######## BATCH UPGRADE - {len(rows)} device(s) ########")
             up.run_batch(rows, self.tftp_ip.get(), root, steps, self._qlog,
-                         cancel=self.cancelled)
+                         cancel=self.cancelled, progress=self._progress_cb)
         self._run(task)
+        self._reset_progress()

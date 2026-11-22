@@ -26,6 +26,8 @@ All notable changes to **NetToolkit**. Versioning follows
   - **SCP transfer** option (reliable, over the SSH session, built-in MD5) as the
     default alternative to TFTP, plus a **Stop** button to cancel a running or
     stuck operation.
+  - **Upload progress** - a live percentage and progress bar during the transfer
+    (both SCP and TFTP, single device and batch).
 
 ### Changed
 - README updated with the two new tabs and an Upgrade how-to.

@@ -37,13 +37,16 @@ MODES = ("netascii", "octet")
 class TftpServer:
     def __init__(self, root: str, bind_ip: str = "0.0.0.0", port: int = 69,
                  log: Optional[Callable[[str], None]] = None,
-                 allow_write: bool = True, max_blksize: int = MAX_BLKSIZE):
+                 allow_write: bool = True, max_blksize: int = MAX_BLKSIZE,
+                 progress: Optional[Callable[[str, int, int], None]] = None):
         self.root = os.path.abspath(root)
         self.bind_ip = bind_ip
         self.port = int(port)
         self.log = log or (lambda m: None)
         self.allow_write = allow_write
         self.max_blksize = int(max_blksize)
+        # progress(filename, bytes_sent, total_bytes) - called during a read
+        self.progress = progress
         self._sock: Optional[socket.socket] = None
         self._thread: Optional[threading.Thread] = None
         self._running = False
@@ -173,6 +176,8 @@ class TftpServer:
                         self.log("  transfer failed (no OACK ack)")
                         return
                 block = 1
+                sent = 0
+                name = os.path.basename(path)
                 while True:
                     chunk = fh.read(blksize)
                     pkt = struct.pack("!HH", DATA, block & 0xFFFF) + chunk
@@ -180,6 +185,12 @@ class TftpServer:
                                                  block & 0xFFFF):
                         self.log(f"  transfer failed (no ACK at block {block})")
                         return
+                    sent += len(chunk)
+                    if self.progress:
+                        try:
+                            self.progress(name, sent, filesize)
+                        except Exception:  # noqa: BLE001
+                            pass
                     if len(chunk) < blksize:
                         break
                     block += 1
